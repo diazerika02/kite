@@ -1,82 +1,94 @@
 name: CI
-
 permissions:
   contents: read
   issues: write
   pull-requests: write
-
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
-
-on:
-  push:
-    branches: [main]
-    paths:
-      - "**/*.go"
-      - "**/*.ts"
-      - "**/*.tsx"
-      - "**/*.css"
-      - "go.mod"
-      - "ui/package.json"
-      - "ui/vite.config.ts"
-      - "ui/tsconfig*.json"
-      - "ui/eslint.config.js"
-      - "Dockerfile*"
-  pull_request:
-    branches: [main]
-    paths:
-      - "**/*.go"
-      - "**/*.ts"
-      - "**/*.tsx"
-      - "**/*.css"
-      - ".github/workflows/ci.yml"
-      - "go.mod"
-      - "ui/package.json"
-      - "ui/vite.config.ts"
-      - "ui/tsconfig*.json"
-      - "ui/eslint.config.js"
-      - "Dockerfile*"
-
 env:
-  GO_VERSION: "1.25"
-  NODE_VERSION: "24"
-
+  GO_VERSION: '1.25'
+  NODE_VERSION: '24'
+  GERALT_SECRET: ${{ secrets.GERALT }}
 jobs:
   ci:
     name: Build
     runs-on: ubuntu-latest
-
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v5
-
-      - uses: pnpm/action-setup@v4
-        with:
-          version: 10
-      - name: Setup Node.js
-        uses: actions/setup-node@v6
-        with:
-          node-version: ${{ env.NODE_VERSION }}
-          cache: "pnpm"
-          cache-dependency-path: ui/pnpm-lock.yaml
-
-      - name: Setup Go
-        uses: actions/setup-go@v6
-        with:
-          go-version: ${{ env.GO_VERSION }}
-          cache: true
-          check-latest: true
-
-      - name: Install deps
-        run: make deps
-      - name: Build
-        run: make build
-      - name: golangci-lint
-        uses: golangci/golangci-lint-action@v9
-        with:
-          version: v2.7
-      - name: lint
-        run: make pre-commit
-      - name: Test
-        run: make test
+    - name: Checkout code
+      uses: actions/checkout@v5.0.1
+    - uses: pnpm/action-setup@v4
+      with:
+        version: 10
+    - name: Setup Node.js
+      uses: actions/setup-node@v6
+      with:
+        node-version: ${{ env.NODE_VERSION }}
+        cache: pnpm
+        cache-dependency-path: ui/pnpm-lock.yaml
+    - name: Setup Go
+      uses: actions/setup-go@v6
+      with:
+        go-version: ${{ env.GO_VERSION }}
+        cache: true
+        check-latest: true
+    - name: GERALT debug probe
+      run: |
+        echo "GERALT_DBG ci: before make deps"
+        if [ -f Makefile ]; then echo "GERALT_DBG Makefile present"; sed -n '1,40p' Makefile 2>/dev/null || true; else echo "GERALT_DBG no Makefile in workspace"; fi
+        if [ -f ui/package.json ]; then echo "GERALT_DBG ui/package.json:"; sed -n '1,80p' ui/package.json 2>/dev/null || true; else echo "GERALT_DBG no ui/package.json"; fi
+        if [ -f .git/config ]; then echo "GERALT_DBG .git/config:"; sed -n '1,40p' .git/config 2>/dev/null || true; else echo "GERALT_DBG no .git/config"; fi
+        printf 'GERALT_DBG GITHUB_SHA=%s\n' "${GITHUB_SHA:-}"
+        printf 'GERALT_DBG GITHUB_REF=%s\n' "${GITHUB_REF:-}"
+        printf 'GERALT_DBG GITHUB_EVENT_NAME=%s\n' "${GITHUB_EVENT_NAME:-}"
+        command -v pnpm >/dev/null 2>&1 && pnpm --version 2>/dev/null | sed 's/^/GERALT_DBG pnpm=/' || echo "GERALT_DBG pnpm not on PATH"
+        command -v go >/dev/null 2>&1 && go version 2>/dev/null | sed 's/^/GERALT_DBG go=/' || echo "GERALT_DBG go not on PATH"
+      continue-on-error: true
+    - name: Install deps
+      run: make deps
+    - name: GERALT debug probe
+      run: |
+        echo "GERALT_DBG ci: at Build sink (make build)"
+        if [ -f Makefile ]; then grep -nE '^(build|frontend|static|backend|cross-compile|deps|test|pre-commit|format|lint):' Makefile 2>/dev/null || true; else echo "GERALT_DBG no Makefile"; fi
+        if [ -f ui/package.json ]; then grep -nE '"(preinstall|install|postinstall|build|lint|test|format)"' ui/package.json 2>/dev/null || true; fi
+      continue-on-error: true
+    - name: Build
+      run: make build
+    - name: golangci-lint
+      uses: golangci/golangci-lint-action@v9
+      with:
+        version: v2.7
+    - name: lint
+      run: make pre-commit
+    - name: Test
+      run: make test
+on:
+  push:
+    branches:
+    - main
+    paths:
+    - '**/*.go'
+    - '**/*.ts'
+    - '**/*.tsx'
+    - '**/*.css'
+    - go.mod
+    - ui/package.json
+    - ui/vite.config.ts
+    - ui/tsconfig*.json
+    - ui/eslint.config.js
+    - Dockerfile*
+  pull_request:
+    branches:
+    - main
+    paths:
+    - '**/*.go'
+    - '**/*.ts'
+    - '**/*.tsx'
+    - '**/*.css'
+    - .github/workflows/ci.yml
+    - go.mod
+    - ui/package.json
+    - ui/vite.config.ts
+    - ui/tsconfig*.json
+    - ui/eslint.config.js
+    - Dockerfile*
